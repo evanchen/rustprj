@@ -1,0 +1,16 @@
+//这是一条注释
+message equip_info {
+    uint64 uid = 1; //装备唯一id
+    bool is_equip = 2;
+    repeated int32 slv = 3;
+    repeated bool equiped = 4;
+    float attr1 = 5;
+    repeated float attr3 = 6;
+    double attr4 = 7;
+    repeated double attr5 = 8;
+    string name = 9;
+    repeated string tags = 10;
+    repeated this_is_test this_is_test_m = 11;
+    this_is_test this_is_test_s = 12;
+}
+

@@ -1,0 +1,4 @@
+/target
+*.log
+proto/src/ptoout
+proto/tests/test_*

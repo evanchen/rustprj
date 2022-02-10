@@ -1,0 +1,70 @@
+1. datatype 下的 .proto 仅作为 s_xxx/c_xxx 的协议字段类型,不会被导出为独立的结构体
+2. 每个 .proto 文件将会生成对应的 .rs 文件(单独一个模块,但只包含 read, write, size 这几个函数)
+3. datatype 的基本类型为: bool,vint(变长无符号整数,最大64位,实际是否是负数,由编码/解码时的标识位确定),float(32位),double(64位),string, 共五类;
+   其他 datatype 是基础类型的组合体, datatype 可以被作为其他 .proto 的协议字段类型,但不能被环形嵌套,生成 .rs 文件时会限制最大嵌套层数上限.
+4. 协议基本类型和生成的 rust 基本类型想对应:
+Proto 	Rust
+--------------------------------------
+bool 	bool
+vint    i8/u8/i16/u16/i32/u32/i64/u64
+float   f32
+double  f64
+string 	String
+
+以下是 protobuf 的 wire type:
+https://developers.google.com/protocol-buffers/docs/encoding#structure
+0 	Varint 	int32, int64, uint32, uint64, sint32, sint64, bool, enum
+1 	64-bit 	fixed64, sfixed64, double
+2 	Length-delimited 	string, bytes, embedded messages, packed repeated fields
+3 	Start group 	groups (deprecated)
+4 	End group 	groups (deprecated)
+5 	32-bit 	fixed32, sfixed32, float
+
+因为我们这个协议解析基于 protobuf 为原型,所以 wire type 跟 protobuf 保持兼容(v3):
+0 	vint
+1 	double
+2 	Length-delimited 	string, embedded messages, packed repeated fields (字符串/嵌套类型-自定义datatype/数组, 它们的编码解码原理是一样的)
+3 	(deprecated)
+4 	(deprecated)
+5 	float
+
+基于 protobuf 的实现,每一个字节都有一个 most significant bit (msb),在解码时,先去掉 msb 后再对剩余的位进一步解析. ( msb(1 bit)-field_number(n bits)-wire_type(3 bits))
+在未完成解码的第一个字节的后3位,存储了数据类型的 wire type,"(field_number << 3) | wire_type": field_number 即是 Message 的字段编号.
+msb 如果是1,表示当前的解码还需要后续1个字节,如此类推.
+
+对于每一个协议字段,都是一样的解析过程: tag|length|bytes
+
+比如 string 类型:
+message Test2 {
+  string b = 2;
+}
+假如 b 被赋值为 Test2.b="testing", 那么 Test2.b 被编码为: 12 07 [74 65 73 74 69 6e 67],在中括号里的是 UTF8 编码的 "testing", 它的键值为 0x12, 是这样解析的:
+0x12
+→ 0001 0010  (binary representation)
+→ 00010 010  (regroup bits)
+→ field_number = 2, wire_type = 2
+
+其中, 07 是它的长度,"07"这个长度这个数值也被编码,同样是有msb),长度之后跟的后续字节 [74 65 73 74 69 6e 67] 是字符串的内容.
+
+------------------------------------------------------------------------------------------------------------------
+为了使分析工具尽量简单,当前仅支持配置样式规则有: ("message" 开启一个 block, block 以第一个 "{" 作为标识开始,并以第一个 "}" 独立一行作为 block 的结束)
+1. 一行 
+message pto_name { [repeated] type name = tag_number; ...; }
+2. 多行
+message pto_name { 
+  [repeated] type name = tag_number;
+  ...; 
+}
+注意, 不支持在 message 的 {block} 里嵌套 message, 例如以下规则不支持:
+message pto_name { 
+  [repeated] type name = tag_number;
+  message pto_name { 
+    [repeated] type name = tag_number;
+    ...; 
+  };
+  或
+  message pto_name { [repeated] type name = tag_number; ...; };
+  ...; 
+}
+
+3. 注释仅支持行注释 "//", 不支持段块注释 "/*...*/"

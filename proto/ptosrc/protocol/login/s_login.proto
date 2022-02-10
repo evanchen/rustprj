@@ -1,0 +1,5 @@
+//请求登录
+message s_login {
+    string vers = 1; //协议版本
+    string acc = 2; //游戏帐号
+}

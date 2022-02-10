@@ -1,0 +1,11 @@
+[workspace]
+
+members = [
+	"conf",
+	"llog",
+	"protogen",
+	"proto",
+	"server",
+	"net",
+]
+

@@ -1,0 +1,7 @@
+//返回请求玩家装备信息
+message c_equip_bag {
+    int8 bagtype = 1; // 背包类型
+    uint64 uid = 2; //玩家uid
+    repeated equip_info equiped = 3; //已装备上的物品
+    repeated equip_info baginfo = 4; //背包物品
+}

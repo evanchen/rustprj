@@ -1,0 +1,15 @@
+//这是一条注释
+message this_is_test {
+    uint64 uid = 1; //装备唯一id
+    bool is_equip = 2;
+    repeated int slv = 3;
+    repeated bool equiped = 4;
+    float attr1 = 5;
+    repeated float attr3 = 6;
+    double attr4 = 7;
+    repeated double attr5 = 8;
+    string name = 9;
+    repeated string tags = 10;
+    string this_is_test = 11;
+}
+

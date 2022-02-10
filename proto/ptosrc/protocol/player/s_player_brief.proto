@@ -1,0 +1,4 @@
+//请求玩家简要信息
+message s_player_brief {
+
+}

@@ -1,0 +1,5 @@
+//请求玩家装备信息
+message s_equip_bag {
+    uint8 bagtype = 1; // 装备背包类型
+}
+

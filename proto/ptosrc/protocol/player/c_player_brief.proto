@@ -1,0 +1,9 @@
+//返回请求玩家简要信息
+message c_player_brief {
+    uint64 uid = 1;
+    string name = 2;
+    int32 level = 3;
+    int32 expr = 4;
+    float gold = 5;
+    int stamina = 6;
+}
