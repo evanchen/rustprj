@@ -1,0 +1,2 @@
+# rustprj
+proto type
