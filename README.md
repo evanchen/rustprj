@@ -1,2 +1,2 @@
 # rustprj
-proto type
+proto type of modules of game service
