@@ -4,9 +4,9 @@ extern crate net;
 #[test]
 fn test_http_client() {
     let conf = Conf::new();
-    let port = conf.get_http_port();
+    let addr = conf.get_http_serv_addr();
     let client = reqwest::blocking::Client::new();
-    let target = format!("http://127.0.0.1:{}", port);
+    let target = format!("http://{}", addr);
 
     let url = format!("{}/req/server/all", target);
     let res = client.get(&url).send().unwrap();

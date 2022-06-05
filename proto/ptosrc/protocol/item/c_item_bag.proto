@@ -1,0 +1,6 @@
+//返回请求玩家装备信息
+message c_item_bag {
+    uint8 bagtype = 1; // 装备背包类型: 1,已装备装备栏;2,物品背包;3,临时背包
+    uint64 uid = 2; //玩家uid
+    repeated item_info baginfo = 3; //背包物品
+}

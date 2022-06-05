@@ -5,7 +5,7 @@ members = [
 	"llog",
 	"protogen",
 	"proto",
-	"server",
+	"rengine",
 	"net",
 ]
 

@@ -1,38 +1,114 @@
 use crate::ProtoMsgType;
+use crate::{ProtoReceiver, ProtoSender};
 use proto::allptos;
 use std::io;
-use tokio::io::{AsyncReadExt, AsyncWriteExt, BufWriter};
-use tokio::net::TcpStream;
+use std::sync::Arc;
+use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader, BufWriter};
+use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
+use tokio::sync::{
+    broadcast,
+    mpsc::{self, error::TrySendError},
+    Semaphore,
+};
+
+extern crate llog;
 
 //一个完整的协议头部,包括: 协议id(u32) + 协议包总长度(u32), 满足8个字节
 const PROTO_HEADER_LEN: usize = 8;
-const PROTO_TOTAL_LEN: usize = 64 * 1024;
-const PROTO_BODY_MAX_LEN: usize = PROTO_TOTAL_LEN - PROTO_HEADER_LEN;
+const INIT_PROTO_TOTAL_LEN: usize = 1024;
+const PROTO_BODY_MAX_LEN: usize = 64 * 1024 - PROTO_HEADER_LEN;
 
 #[derive(Debug)]
-pub struct Connection {
+pub struct ConnReader {
     vfd: u64,
-    stream: BufWriter<TcpStream>,
+    stream: BufReader<OwnedReadHalf>,
+    proto_tx: ProtoSender, // tcp msg send to outer service
+    limit_connections: Arc<Semaphore>,
+    _shutdown_complete: mpsc::Sender<()>,
+    shutdown: bool,
     buffer: Vec<u8>,
     proto_id: u32,
     proto_len: usize,
     is_header_decode: bool,
     readnum: u64,
-    writenum: u64,
 }
 
-impl Connection {
-    pub fn new(socket: TcpStream, vfd: u64) -> Connection {
-        Connection {
+impl Drop for ConnReader {
+    fn drop(&mut self) {
+        self.limit_connections.add_permits(1);
+    }
+}
+
+impl ConnReader {
+    pub fn new(
+        vfd: u64,
+        stream: OwnedReadHalf,
+        proto_tx: ProtoSender,
+        limit_connections: Arc<Semaphore>,
+        _shutdown_complete: mpsc::Sender<()>,
+    ) -> ConnReader {
+        ConnReader {
             vfd,
-            stream: BufWriter::new(socket),
-            buffer: Vec::with_capacity(PROTO_TOTAL_LEN),
+            stream: BufReader::new(stream),
+            proto_tx,
+            limit_connections,
+            _shutdown_complete,
+            shutdown: false,
+            buffer: Vec::with_capacity(INIT_PROTO_TOTAL_LEN),
             proto_id: 0,
             proto_len: 0,
             is_header_decode: false,
             readnum: 0,
-            writenum: 0,
         }
+    }
+
+    pub async fn run(
+        &mut self,
+        log_name: &'static str,
+        mut notify: broadcast::Receiver<()>,
+    ) -> crate::Result<()> {
+        while !self.shutdown {
+            tokio::select! {
+                res = self.read_frame() => {
+                    if let Some(pto) = res? {
+                        println!("recv: vfd={},proto_id={},readnum={}",pto.0,pto.1,self.readnum);
+
+                        // 注意, 如果这里使用 send 发送会产生阻塞,而对端的消息处理完毕后也可能会有消息返回也是通过 send.
+                        // 如果这边的 send 出现阻塞, 对端返回的 send 也同样出现阻塞, 这时候会导致两端的协程产生 deadlock.
+                        // 解决的办法有 1) send 一个 oneshot 或者 2) 用 try_send 代替 send;
+                        // 用 1) 的弊端是必须在 send 的一端等待消息返回. 而用 try_send 的弊端则是发送失败时,只能选择丢弃消息
+                        // 这里选择 2), 因为这样做更符合背压原理, 对于游戏玩家的请求, 处理不过来就丢弃这也是合理的;
+                        // 但对于 rpc 的服务类型,如果确保不了发送消息的成功就会出现麻烦事.
+                        // :TODO: 对于 rpc 的发送, 后续是通过 spawn 一个协程来发送呢,还是有其他更好的办法.
+                        // 这里暂时的做法是把未发送成功的协议记录下来,通过日志的错误提示,再寻求扩大队列还是其他更好的办法.
+
+                        //self.proto_tx.send(pto).await?; // would block
+                        if let Err(err) = self.proto_tx.try_send(pto) {
+                            match err {
+                                TrySendError::Full(err) => {
+                                    llog::error!(log_name,"[ConnReader]: proto_tx send failed: vfd={},proto_id={}",err.0,err.1);
+                                },
+                                TrySendError::Closed(_err) =>{
+                                    llog::error!(log_name,"[ConnReader]: proto_tx close: vfd={}",self.vfd);
+                                    self.shutdown = true;
+                                    break;
+                                }
+                            }
+                        }
+                    } else {
+                        llog::info!(log_name,"[ConnReader]: tcp connection close: vfd={}",self.vfd);
+                        self.shutdown = true;
+                        break;
+                    }
+                }
+                _ = notify.recv() => {
+                    llog::info!(log_name,"[ConnReader]: notify connection close: vfd={}",self.vfd);
+                    self.shutdown = true;
+                    break;
+                },
+            };
+        }
+        Ok(())
     }
 
     pub async fn read_frame(&mut self) -> crate::Result<Option<ProtoMsgType>> {
@@ -45,12 +121,8 @@ impl Connection {
                 self.proto_len = 0;
                 return Ok(Some(pto));
             }
+            // :TODO: the capacity of this buffer will grow..when to shrink the buffer?
             if 0 == self.stream.read_buf(&mut self.buffer).await? {
-                // The remote closed the connection. For this to be a clean
-                // shutdown, there should be no data in the read buffer. If
-                // there is, this means that the peer closed the socket while
-                // sending a frame.
-
                 if self.buffer.is_empty() {
                     return Ok(None);
                 } else {
@@ -123,18 +195,50 @@ impl Connection {
             Err(err) => Err(err.into()),
         }
     }
+}
 
-    /// Write a single `Frame` value to the underlying stream.
-    ///
-    /// The `Frame` value is written to the socket using the various `write_*`
-    /// functions provided by `AsyncWrite`. Calling these functions directly on
-    /// a `TcpStream` is **not** advised, as this will result in a large number of
-    /// syscalls. However, it is fine to call these functions on a *buffered*
-    /// write stream. The data will be written to the buffer. Once the buffer is
-    /// full, it is flushed to the underlying socket.
+#[derive(Debug)]
+pub struct ConnWriter {
+    vfd: u64,
+    stream: BufWriter<OwnedWriteHalf>,
+    proto_rx: ProtoReceiver,
+    writenum: u64,
+}
+
+impl ConnWriter {
+    pub fn new(vfd: u64, stream: OwnedWriteHalf, proto_rx: ProtoReceiver) -> ConnWriter {
+        ConnWriter {
+            vfd,
+            stream: BufWriter::new(stream),
+            proto_rx,
+            writenum: 0,
+        }
+    }
+
+    pub async fn run<'a>(&mut self, log_name: &'a str) -> crate::Result<()> {
+        while let Some((from_vfd, proto_id, pto)) = self.proto_rx.recv().await {
+            if self.vfd != from_vfd {
+                llog::info!(
+                    log_name,
+                    "[ConnWriter]: wrong vfd={}, from_vfd={}",
+                    self.vfd,
+                    from_vfd
+                );
+                break;
+            }
+            let buf = allptos::serialize(pto)?;
+            self.write_frame(proto_id, &buf).await?;
+        }
+        llog::error!(log_name, "[ConnWriter]: closed: {}", self.vfd);
+        Ok(())
+    }
+
     pub async fn write_frame(&mut self, proto_id: u32, buf: &[u8]) -> io::Result<()> {
         self.writenum += 1;
-        //println!("[write_frame]: writenum={},proto_id={}",self.writenum,proto_id);
+        println!(
+            "[write_frame]: vfd={},proto_id={},writenum={}",
+            self.vfd, proto_id, self.writenum
+        );
 
         let buflen = buf.len() as u32;
         // little-endian

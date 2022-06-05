@@ -1,0 +1,5 @@
+//返回错误提示
+message c_errors {
+    uint32 id = 1; // 错误提示id
+    string param = 2; //预留使用
+}

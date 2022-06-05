@@ -1,0 +1,8 @@
+// 存档数据
+message db_save_req {
+    uint64 from_host = 1; //来自哪个服务器
+    string db_name = 2; //数据库表名
+    string key = 3; //键
+    repeated uint8 value = 4; //值,以 vec<u8> 形式通过rpc传输,可以用 datatype 来解析,也可以直接存档到 kv 数据库
+    uint64 counter = 5; //数据存档次数
+}

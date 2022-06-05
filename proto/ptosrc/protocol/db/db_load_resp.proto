@@ -1,0 +1,8 @@
+// 返回加载数据
+message db_load_resp {
+    string key = 1; //键
+    repeated uint8 value = 2; //值
+    uint64 counter = 3;
+    uint64 ret_func = 4; //加载完返回到指定函数
+    uint64 vfd = 5;
+}

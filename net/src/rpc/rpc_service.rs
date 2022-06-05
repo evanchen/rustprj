@@ -13,7 +13,7 @@ use std::future::Future;
 use tokio::sync::mpsc;
 
 pub async fn start_service(
-    port: i32,
+    addr: &str,
     shutdown: impl Future,
     chan_out_tx: ChanProtoSender,
     pto_out_sender: ProtoSender,
@@ -23,7 +23,7 @@ pub async fn start_service(
     tcp::tcp_service::start_service(
         serv_type,
         log_name,
-        port,
+        addr,
         shutdown,
         chan_out_tx,
         pto_out_sender,

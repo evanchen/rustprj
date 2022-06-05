@@ -1,3 +1,4 @@
+use std::fmt::{Display, Formatter, Result};
 use tokio::sync::{mpsc, oneshot};
 
 pub mod http_service;
@@ -7,7 +8,34 @@ pub enum HttpProtoType {
     ReqServerAll,
     ReqServerInfo(u32),
     RespServerInfo(String),
+    ReqGM(String),
+    RespGM(String),
     Unimplemented(String),
+}
+
+impl Display for HttpProtoType {
+    fn fmt(&self, f: &mut Formatter) -> Result {
+        match self {
+            HttpProtoType::ReqServerAll => {
+                write!(f, "ReqServerAll")
+            }
+            HttpProtoType::ReqServerInfo(hostid) => {
+                write!(f, "ReqServerInfo({})", hostid)
+            }
+            HttpProtoType::RespServerInfo(info) => {
+                write!(f, "RespServerInfo({})", info)
+            }
+            HttpProtoType::ReqGM(cmdstr) => {
+                write!(f, "ReqGM({})", cmdstr)
+            }
+            HttpProtoType::RespGM(cmdstr) => {
+                write!(f, "RespGM({})", cmdstr)
+            }
+            HttpProtoType::Unimplemented(info) => {
+                write!(f, "Unimplemented({})", info)
+            }
+        }
+    }
 }
 
 pub type HttpProtoSenderOp = oneshot::Sender<HttpProtoType>;

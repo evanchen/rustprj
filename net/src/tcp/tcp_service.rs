@@ -13,14 +13,13 @@ use tokio::{
 pub async fn start_service(
     serv_type: ServiceType,
     log_name: &'static str,
-    port: i32,
+    addr: &str,
     shutdown: impl Future,
     chan_out_tx: ChanProtoSender,
     pto_out_sender: ProtoSender,
 ) {
-    // Bind a TCP listener
-    let addr = format!("0.0.0.0:{}", port);
-    let listener = TcpListener::bind(&addr).await.unwrap();
+    llog::info!(log_name, "service start: listening {}", addr);
+    let listener = TcpListener::bind(addr).await.unwrap();
     listener::run(
         serv_type,
         log_name,

@@ -1,19 +1,12 @@
+// 这个模块主要是用来辅助测试
+use crate::{ChanProtoSender, ConnReader, ConnWriter, ProtoMsgType, ProtoSender};
 use std::future::Future;
+use std::sync::Arc;
 use tokio::net::TcpStream;
-
-use crate::{ChanProtoSender, Connection, MailBox, ProtoMsgType, ProtoSender, RecvType};
-use proto::allptos;
+use tokio::sync::{broadcast, mpsc, Semaphore};
 
 extern crate llog;
 const LOG_NAME: &str = "tcp_client.log";
-
-#[derive(Debug)]
-pub struct Client {
-    identity: u64,
-    connection: Connection,
-    outsender: ProtoSender,
-    mailbox: MailBox<ProtoMsgType>,
-}
 
 pub async fn run(
     addr: String,
@@ -22,75 +15,58 @@ pub async fn run(
     chan_out: ChanProtoSender,
     out_sender: ProtoSender,
 ) -> crate::Result<()> {
-    // Establish a connection
-    let socket = TcpStream::connect(addr).await.unwrap();
-    let mut client = Client {
-        identity,
-        connection: Connection::new(socket, identity),
-        outsender: out_sender.clone(),
-        mailbox: MailBox::new(1000),
-    };
+    let vfd = identity;
+    let log_name = LOG_NAME;
 
-    //把自己的sender暴露给外界
-    chan_out
-        .send((identity, client.mailbox.send.clone()))
-        .await?;
+    let stream = TcpStream::connect(addr).await.unwrap();
+    let (conn_tx, conn_rx) = mpsc::channel::<ProtoMsgType>(100);
+    let (read_stream, write_stream) = stream.into_split();
 
-    tokio::select! {
-        res = client.run() => {
-            if let Err(err) = res {
-                llog::error!(LOG_NAME,"[tcp_client.run]: error: {:?}",err);
-                return Err(err);
-            } else {
-                println!("connection run() return");
-            }
+    let (notify_shutdown, _) = broadcast::channel(1);
+    let limit_connections = Arc::new(Semaphore::new(1));
+    let (shutdown_complete_tx, mut shutdown_complete_rx) = mpsc::channel(1);
+
+    let mut reader = ConnReader::new(
+        vfd,
+        read_stream,
+        out_sender.clone(),
+        limit_connections.clone(),
+        shutdown_complete_tx.clone(),
+    );
+
+    let mut writer = ConnWriter::new(vfd, write_stream, conn_rx);
+
+    // 暴露自己的消息输入端给外界
+    chan_out.send((identity, conn_tx)).await?;
+
+    // 开启 socket 消息写循环
+    tokio::spawn(async move {
+        if let Err(err) = writer.run(log_name).await {
+            llog::error!(log_name, "[ConnWriter]: error: vfd={},{:?}", vfd, err);
+        } else {
+            llog::error!(log_name, "[ConnWriter]: return,vfd={}", vfd);
         }
-        _ = shutdown => {
-            llog::info!(LOG_NAME,"client shut down.");
+    });
+
+    // 开启socket 消息读循环
+    let nofity = notify_shutdown.subscribe();
+    tokio::spawn(async move {
+        if let Err(err) = reader.run(log_name, nofity).await {
+            llog::error!(log_name, "[ConnReader]: error: vfd={},{:?}", vfd, err);
+        } else {
+            llog::info!(log_name, "[ConnReader]: return,vfd={}", vfd);
         }
-    }
+    });
+    let _ = shutdown.await;
+
+    // only one sender is drop, receivers will get a closed error
+    // then shutdown signal is finished.
+    drop(notify_shutdown);
+    // when connection receives a shutdown signal, connection itself will be dropped
+    // so does its "_shutdown_complete".
+    drop(shutdown_complete_tx);
+    //wait for all other connections to be dropped.
+    let _ = shutdown_complete_rx.recv().await;
+
     Ok(())
-}
-
-impl Client {
-    pub async fn run(&mut self) -> crate::Result<()> {
-        llog::info!(LOG_NAME, "[run]: accepting message");
-        loop {
-            let (rtype, maybe_proto) = tokio::select! {
-                res = self.connection.read_frame() => {
-                    //收到 socket 接收的协议, 转发到 service 处理
-                    (RecvType::FromSocket,res?)
-                },
-                res = self.mailbox.recv() => {
-                    //收到 service 的协议, 通过 socket 发送给 client
-                    (RecvType::FromService,res)
-                }
-            };
-            let pto = match maybe_proto {
-                Some(pto) => pto,
-                None => return Ok(()),
-            };
-            match rtype {
-                RecvType::FromSocket => {
-                    //println!("cli receive proto from socket,and transfer the proto to service: vfd={},proto_id={}",pto.0,pto.1);
-                    self.outsender.send(pto).await?;
-                }
-                RecvType::FromService => {
-                    let (identity, proto_id, pto) = pto;
-                    if identity != self.identity {
-                        llog::info!(
-                            LOG_NAME,
-                            "[handler.run]: wrong identity={}, self.identity={}",
-                            identity,
-                            self.identity
-                        );
-                        return Err("wrong identity".into());
-                    }
-                    //println!("cli send proto to socket: identity={},proto_id={}", identity,proto_id);
-                    let buf = allptos::serialize(pto)?;
-                    self.connection.write_frame(proto_id, &buf).await?;
-                }
-            }
-        }
-    }
 }

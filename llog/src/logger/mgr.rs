@@ -12,7 +12,7 @@ type RcLogType = Rc<RefCell<Logger>>;
 pub struct LoggerMgr {
     log_level: LevelType,
     roll_file_size: u64,
-    loggers: RefCell<HashMap<&'static str, RcLogType>>,
+    loggers: RefCell<HashMap<String, RcLogType>>,
 }
 
 impl LoggerMgr {
@@ -30,20 +30,24 @@ impl LoggerMgr {
     pub fn get_log_level(&self) -> LevelType {
         self.log_level
     }
+
     pub fn can_log_debug(&self) -> bool {
         LevelType::Debug >= self.log_level
     }
+
     pub fn can_log_warning(&self) -> bool {
         LevelType::Warning >= self.log_level
     }
+
     pub fn can_log_info(&self) -> bool {
         LevelType::Info >= self.log_level
     }
+
     pub fn can_log_error(&self) -> bool {
         LevelType::Error >= self.log_level
     }
 
-    pub fn get_logger(&self, fname: &'static str) -> Result<RcLogType> {
+    pub fn get_logger(&self, fname: &str) -> Result<RcLogType> {
         if let Some(lg) = self.loggers.borrow().get(fname) {
             return Ok(lg.clone());
         }
@@ -60,7 +64,9 @@ impl LoggerMgr {
         {
             Ok(fh) => {
                 let res = Rc::new(RefCell::new(Logger::new(fname, &path, fh)));
-                self.loggers.borrow_mut().insert(fname, res.clone());
+                self.loggers
+                    .borrow_mut()
+                    .insert(fname.to_owned(), res.clone());
                 Ok(res)
             }
             Err(err) => Err(err),

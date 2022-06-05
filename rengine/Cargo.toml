@@ -1,0 +1,24 @@
+[package]
+name = "rengine"
+version = "0.1.0"
+edition = "2018"
+authors = ["wqchen1130@126.com"]
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[[bin]]
+name="service"
+path = "src/bin/service.rs"
+
+[[bin]]
+name="cli"
+path = "src/bin/cli.rs"
+
+[dependencies]
+conf = { path = "../conf" }
+llog = { path = "../llog" }
+proto = { path = "../proto" }
+net = { path = "../net" }
+tokio = { version = "1", features = ["full"] }
+serde = "1.0"
+serde_json = "1.0"

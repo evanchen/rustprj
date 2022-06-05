@@ -42,11 +42,11 @@ fn testservice() {
         tokio::spawn(async move {
             let log_name = "test_tcp_service.log";
             let conf = Conf::new();
-            let port = conf.get_tcp_port();
+            let addr = conf.get_tcp_serv_addr();
             tcp_service::start_service(
                 net::ServiceType::Tcp,
                 log_name,
-                port,
+                addr,
                 signal::ctrl_c(),
                 chan_out_tx,
                 out_sender,

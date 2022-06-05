@@ -20,7 +20,7 @@ pub fn can_log_error() -> bool {
     LOGOBJ_MGR.with(|f| f.can_log_error())
 }
 
-pub fn debug(fname: &'static str, logstr: &str) {
+pub fn debug<'a>(fname: &'a str, logstr: &str) {
     LOGOBJ_MGR.with(|f| {
         let lv = f.get_log_level();
         let datetime = Local::now();
@@ -37,7 +37,7 @@ pub fn debug(fname: &'static str, logstr: &str) {
     });
 }
 
-pub fn warning(fname: &'static str, logstr: &str) {
+pub fn warning<'a>(fname: &'a str, logstr: &str) {
     LOGOBJ_MGR.with(|f| {
         let lv = f.get_log_level();
         let datetime = Local::now();
@@ -54,7 +54,7 @@ pub fn warning(fname: &'static str, logstr: &str) {
     })
 }
 
-pub fn info(fname: &'static str, logstr: &str) {
+pub fn info<'a>(fname: &'a str, logstr: &str) {
     LOGOBJ_MGR.with(|f| {
         let lv = f.get_log_level();
         let datetime = Local::now();
@@ -71,7 +71,7 @@ pub fn info(fname: &'static str, logstr: &str) {
     })
 }
 
-pub fn error(fname: &'static str, logstr: &str) {
+pub fn error<'a>(fname: &'a str, logstr: &str) {
     LOGOBJ_MGR.with(|f| {
         let lv = f.get_log_level();
         let datetime = Local::now();

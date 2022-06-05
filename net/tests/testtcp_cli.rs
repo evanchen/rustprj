@@ -1,7 +1,9 @@
 use conf::conf::Conf;
 use tokio::signal;
-use tokio::sync::mpsc;
-use tokio::time::{self, Duration};
+use tokio::{
+    sync::mpsc,
+    time::{self, Duration},
+};
 extern crate net;
 use llog;
 
@@ -44,9 +46,7 @@ fn testclient() {
         let identity = 1u64;
         tokio::spawn(async move {
             let conf = Conf::new();
-            let port = conf.get_tcp_port();
-            // Bind a TCP listener
-            let addr = format!("127.0.0.1:{}", port);
+            let addr = conf.get_tcp_serv_addr().to_owned();
             let _ = client::run(addr, signal::ctrl_c(),identity,chan_out_tx.clone(),out_sender).await;
             drop(shutdown_complete_tx1);
             let _ = shutdown_notify_tx.send(());
@@ -54,7 +54,7 @@ fn testclient() {
 
         // service
         tokio::spawn(async move {
-            let logger = "test_service_cli.log";
+            let log_name = "test_service_cli.log";
             let net::ServiceState {
                 mut entity,
                 mut mailbox,
@@ -80,12 +80,12 @@ fn testclient() {
                             match entity.get(vfd) {
                                 Some(ch) => {
                                     if let Err(err) = ch.send((vfd,proto_id,pto)).await {
-                                        llog::error!(logger,"service send proto to connection failed: vfd={},proto_id={},err={:?}",vfd,proto_id,err);
+                                        llog::error!(log_name,"service send proto to connection failed: vfd={},proto_id={},err={:?}",vfd,proto_id,err);
                                     }
                                 },
                                 None => {
                                     // ch 不存在
-                                    llog::error!(logger,"service send proto,connection doesn't exist: vfd={},proto_id={}",vfd,proto_id);
+                                    llog::error!(log_name,"service send proto,connection doesn't exist: vfd={},proto_id={}",vfd,proto_id);
                                 }
                             }
                         }
@@ -99,14 +99,14 @@ fn testclient() {
                             match entity.get(vfd) {
                                 Some(ch) => {
                                     if let Err(err) = ch.send((vfd,proto_id,ProtoType::s_login(s_login))).await {
-                                        llog::error!(logger,"tick send proto to connection failed: vfd={},proto_id={},err={:?}",vfd,proto_id,err);
+                                        llog::error!(log_name,"tick send proto to connection failed: vfd={},proto_id={},err={:?}",vfd,proto_id,err);
                                         entity.unregister(vfd);
                                     }
                                     //stopsend = true;
                                 },
                                 None => {
                                     // ch 不存在
-                                    llog::error!(logger,"tick send proto,connection doesn't exist: vfd={},proto_id={}",vfd,proto_id);
+                                    llog::error!(log_name,"tick send proto,connection doesn't exist: vfd={},proto_id={}",vfd,proto_id);
                                 }
                             }
                             //println!("tick send vfd={},proto_id={}",vfd,proto_id);
@@ -119,7 +119,7 @@ fn testclient() {
                 }
             }
             drop(shutdown_complete_tx2);
-            llog::info!(logger,"service stop");
+            llog::info!(log_name,"service stop");
         });
 
         let _ = shutdown_complete_rx.recv().await;

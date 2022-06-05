@@ -9,7 +9,7 @@ fn testallptos() {
 
 #[test]
 fn testrwpto() {
-    let mut s_equip_bag = proto::s_equip_bag::s_equip_bag::default();
+    let mut s_equip_bag = proto::s_item_bag::s_item_bag::default();
     s_equip_bag.bagtype = 255;
     println!("{:?}", s_equip_bag);
     let msglen = s_equip_bag.size();
@@ -20,6 +20,6 @@ fn testrwpto() {
     println!("s_equip_bag into buf: {:?}", w);
 
     let mut r = proto::BytesReader::new(0, buf.len());
-    let s2 = proto::s_equip_bag::s_equip_bag::read(&mut r, &buf).unwrap();
+    let s2 = proto::s_item_bag::s_item_bag::read(&mut r, &buf).unwrap();
     println!("s_equip_bag from buf: {:?}", s2);
 }

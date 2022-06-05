@@ -1,0 +1,6 @@
+//物品信息
+message item_info {
+    uint64 uid = 1; //物品唯一id
+    uint32 id = 2; //物品配置表id
+    int32 stack = 3; //物品数量
+}

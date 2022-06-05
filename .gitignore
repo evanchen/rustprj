@@ -2,3 +2,4 @@
 *.log
 proto/src/ptoout
 proto/tests/test_*
+conf/conf.toml

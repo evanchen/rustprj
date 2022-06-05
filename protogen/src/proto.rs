@@ -98,6 +98,8 @@ pub fn parse_proto() {
     let sysconf = conf::Conf::new();
     let ptosrc = sysconf.get_src_dir();
     let ptoout = sysconf.get_out_dir();
+    // ptoout 应该作为独立的仓库目录,不应自动创建
+    //fs::create_dir_all(&ptoout).unwrap();
     let initprotos = sysconf.get_init_protos();
     let (tx, rx) = channel::<(IType, PathBuf)>();
     thread::spawn(move || {
@@ -324,7 +326,7 @@ fn generate(initprotos: &[String], outdir: &str, map_datatype: &mut Dtmap, map_p
     let mut struct_names = Vec::<String>::new();
     //生成 datatype struct
     for (_k, v) in map_datatype.iter() {
-        datatype2file(outdir, v).unwrap();
+        datatype2file(outdir, 0, v).unwrap();
         let name = v.borrow_mut().name.clone();
         struct_names.push(name);
     }
@@ -424,7 +426,7 @@ impl MsgWrite for {0} {{
     Ok(())
 }
 
-fn datatype2file(outdir: &str, pto: &Rc<RefCell<Pto>>) -> Result<()> {
+fn datatype2file(outdir: &str, ptoid: u32, pto: &Rc<RefCell<Pto>>) -> Result<()> {
     if pto.borrow_mut().members.is_empty() {
         return datatype2file_empty(outdir, pto);
     }
@@ -664,11 +666,11 @@ use crate::util;
     let body = body.join("\n");
     //struct body
     write_struct(&mut file, &struct_name, &body)?;
-    write_line(&mut file, "\n\n")?;
+    write_line(&mut file, "\n")?;
 
     // with random default
     let random_default_body = rand_body.join("\n");
-    write_imp_struct_with_random_default(&mut file, &struct_name, &random_default_body)?;
+    write_imp_struct_with_random_default(&mut file, ptoid, &struct_name, &random_default_body)?;
     write_line(&mut file, "\n\n")?;
 
     // trait MsgRead
@@ -707,8 +709,8 @@ use crate::util;
     Ok(())
 }
 
-fn pto2file(outdir: &str, _ptoid: u32, pto: &Rc<RefCell<Pto>>) -> Result<()> {
-    datatype2file(outdir, pto)
+fn pto2file(outdir: &str, ptoid: u32, pto: &Rc<RefCell<Pto>>) -> Result<()> {
+    datatype2file(outdir, ptoid, pto)
 }
 
 fn generate_all_pto_mapping(allptos: &[(u32, String)], outdir: &str, fname: &str) -> Result<()> {
@@ -737,6 +739,7 @@ use crate::{
     let mut vs = Vec::new();
     let mut f2vs = Vec::new();
     let mut f3vs = Vec::new();
+    let mut f4vs = Vec::new();
     for (id, name) in allptos {
         let str = format!("    {0}({0}::{0}),", name);
         vs.push(str);
@@ -760,6 +763,12 @@ use crate::{
         f3vs.push("            obj.write(&mut w)?;".to_string());
         f3vs.push("            Ok(buf)".to_string());
         f3vs.push("        },".to_string());
+
+        // inner_info
+        f4vs.push(format!(
+            "            ProtoType::{1}(_obj) => {{ ({0},\"{1}\") }},",
+            id, name
+        ));
     }
 
     let enumstr = vs.join("\n");
@@ -790,6 +799,22 @@ pub enum ProtoType {{
     );
     write_line(&mut file, &enumstr)?;
 
+    // function inner_info
+    let fnstr = f4vs.join("\n");
+    let fnstr = format!(
+        r#"
+impl ProtoType {{
+    pub fn inner_info(&self) -> (u32,&'static str) {{
+        match self {{
+{}
+        }}
+    }}
+}}
+"#,
+        fnstr
+    );
+    write_line(&mut file, &fnstr)?;
+
     // function parse_proto
     let fnstr = f2vs.join("\n");
     let f2 = format!(
@@ -799,7 +824,8 @@ pub fn parse_proto(proto_id: u32,buf: &[u8], start_pos: usize, end_pos: usize) -
 {}
         _ => Err(crate::Error::Message(format!("[allptos.parse_proto]: failed, proto_id={{}}",proto_id)))
     }}
-}}"#,
+}}
+"#,
         fnstr
     );
     write_line(&mut file, &f2)?;
@@ -839,8 +865,7 @@ fn write_struct(file: &mut File, struct_name: &str, body: &str) -> Result<()> {
 #[derive(Debug,Default)]
 pub struct {} {{
 {}
-}}
-"#,
+}}"#,
         struct_name, body
     ))?;
     Ok(())
@@ -869,13 +894,30 @@ fn write_imp_read_for_struct(file: &mut File, struct_name: &str, body: &str) -> 
 
 fn write_imp_struct_with_random_default(
     file: &mut File,
+    ptoid: u32,
     struct_name: &str,
     body: &str,
 ) -> Result<()> {
-    file.write_fmt(format_args!(
-        "impl {} {{\n    pub fn default_with_random_value() -> Self {{\n\t\tlet mut msg = Self::default();\n{}\n\t\tmsg\n\t}}\n}}\n",
-        struct_name, body
-    ))?;
+    // file.write_fmt(format_args!(
+    //     "impl {} {{\n    pub fn default_with_random_value() -> Self {{\n\t\tlet mut msg = Self::default();\n{}\n\t\tmsg\n\t}}\n}}\n",
+    //     struct_name, body
+    // ))?;
+
+    let str = format!(
+        r#"
+impl {1} {{
+    pub fn id() -> u32 {{ {0} }}
+
+    pub fn default_with_random_value() -> Self {{
+        let mut msg = Self::default();
+{2}
+        msg
+    }}
+}}"#,
+        ptoid, struct_name, body
+    );
+
+    file.write_all(str.as_bytes())?;
     Ok(())
 }
 

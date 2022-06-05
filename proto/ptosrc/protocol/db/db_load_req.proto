@@ -1,0 +1,8 @@
+// 加载数据
+message db_load_req {
+    uint64 from_host = 1; //来自哪个服务器
+    string db_name = 2; //数据库表名
+    string key = 3; //键
+    uint64 ret_func = 4; //加载完返回到指定函数
+    uint64 vfd = 5;
+}

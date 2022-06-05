@@ -3,12 +3,16 @@ use tokio::sync::mpsc::{Receiver, Sender};
 pub mod http;
 pub mod rpc;
 pub mod tcp;
+pub mod utils;
 
-use proto::allptos::ProtoType;
+pub use proto::allptos::{self, ProtoType};
 // vfd,proto_id,pto
 pub type ProtoMsgType = (u64, u32, ProtoType);
 
-use tcp::{connection::Connection, mailbox::MailBox, shutdown::Shutdown};
+pub use tcp::{
+    connection::{ConnReader, ConnWriter},
+    mailbox::MailBox,
+};
 
 #[derive(Debug)]
 pub enum RecvType {
@@ -16,7 +20,7 @@ pub enum RecvType {
     FromService,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum ServiceType {
     Tcp,
     Rpc,
@@ -54,7 +58,7 @@ where
 }
 
 pub trait Communicate<T> {
-    fn register(&mut self, vfd: u64, sender: Sender<T>);
-    fn unregister(&mut self, vfd: u64);
-    fn get(&mut self, vfd: u64) -> Option<&Sender<T>>;
+    fn register(&mut self, identity: u64, sender: Sender<T>);
+    fn unregister(&mut self, identity: u64);
+    fn get(&mut self, identity: u64) -> Option<&Sender<T>>;
 }
